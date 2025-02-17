@@ -5,31 +5,29 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
     // Get input values
     String projectId = get(Fields.In, "ProjectId").getString();
     String textColumn = get(Fields.In, "TextColumn").getString();
-    
-    // Define the regex pattern to extract date-text pairs
+
+    if (textColumn == null || textColumn.trim().isEmpty()) {
+        return true;  // Skip empty text fields
+    }
+
+    // Define the regex pattern to extract date-text pairs (handles inconsistent spaces)
     Pattern pattern = Pattern.compile("(\\d{2}/\\d{2}/\\d{2})\\s*-*\\s*(.*?)(?=(\\d{2}/\\d{2}/\\d{2})|$)");
     Matcher matcher = pattern.matcher(textColumn);
 
-    // Store extracted values
-    ArrayList<Object[]> rows = new ArrayList<>();
-
+    // Process each match
     while (matcher.find()) {
-        String date = matcher.group(1);  // Extract Date
+        String date = matcher.group(1);   // Extract Date
         String text = matcher.group(2).trim();  // Extract Text and trim spaces
 
-        // Add extracted row to list
-        rows.add(new Object[]{projectId, date, text});
+        // Create output row
+        Object[] outputRow = createOutputRow(getOutputRowMeta().size());
+        outputRow[getOutputRowMeta().indexOfValue("ProjectId")] = projectId;
+        outputRow[getOutputRowMeta().indexOfValue("Date")] = date;
+        outputRow[getOutputRowMeta().indexOfValue("Text")] = text;
+
+        // Send row to next step
+        putRow(getOutputRowMeta(), outputRow);
     }
 
-    // Output each extracted row
-    for (Object[] row : rows) {
-        Object[] outputRow = createOutputRow(rowMeta.size());
-        outputRow[0] = row[0]; // ProjectId
-        outputRow[1] = row[1]; // Date
-        outputRow[2] = row[2]; // Text
-        putRow(outputRow);
-    }
-
-    // Stop processing after processing all rows
-    return false;
+    return true;  // Continue processing rows
 }
