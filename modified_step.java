@@ -20,8 +20,10 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
 
         logBasic("Processing Status: " + statusText);
 
-        // Define regex to match ONLY valid MM/dd/yy dates
-        Pattern datePattern = Pattern.compile("(\\d{2}/\\d{2}/\\d{2})");
+        // Define regex to match valid MM/dd/yy dates (only numbers)
+        Pattern validDatePattern = Pattern.compile("(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\\d{2}");
+        // Match both valid and invalid dates
+        Pattern datePattern = Pattern.compile("(\\d{2}|xx)/(\\d{2}|xx)/(\\d{2})");
         Matcher matcher = datePattern.matcher(statusText);
 
         // List to store extracted date-text pairs
@@ -38,8 +40,8 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
                 dateSegments.add(statusText.substring(lastIndex, matchStart).trim());
             }
 
-            // Add the matched date itself
-            dateSegments.add(matcher.group(1));
+            // Add the matched date itself (valid or invalid)
+            dateSegments.add(matcher.group(0));
 
             // Move the last index forward
             lastIndex = matcher.end();
@@ -53,22 +55,47 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
         logBasic("Extracted Segments: " + dateSegments.toString());
 
         // Iterate over extracted segments and determine date-text pairs
-        String currentDate = null;
+        for (int i = 0; i < dateSegments.size(); i++) {
+            String segment = dateSegments.get(i);
+            Matcher validDateMatcher = validDatePattern.matcher(segment);
+            Matcher anyDateMatcher = datePattern.matcher(segment);
 
-        for (String segment : dateSegments) {
-            Matcher dateMatcher = datePattern.matcher(segment);
+            if (validDateMatcher.matches()) {
+                // This is a valid date
+                if (i + 1 < dateSegments.size()) {
+                    // The next segment is the corresponding text
+                    String cleanedText = dateSegments.get(i + 1).replaceAll("^[\\s\\-:]+", "").trim();
+                    
+                    if (!cleanedText.isEmpty()) {
+                        Object[] outputRow = createOutputRow(rowData, data.outputRowMeta.size());
+                        get(Fields.Out, "date").setValue(outputRow, segment);
+                        get(Fields.Out, "text").setValue(outputRow, cleanedText);
+                        putRow(data.outputRowMeta, outputRow);
 
-            if (dateMatcher.matches()) {
-                // This segment is a valid date
-                currentDate = segment;
-            } else {
-                // This segment is text
-                Object[] outputRow = createOutputRow(rowData, data.outputRowMeta.size());
-                get(Fields.Out, "date").setValue(outputRow, (currentDate != null) ? currentDate : null);
-                get(Fields.Out, "text").setValue(outputRow, segment);
-                putRow(data.outputRowMeta, outputRow);
+                        logBasic("Output Row -> Date: " + segment + ", Text: " + cleanedText);
+                    }
+                    i++; // Skip next segment since it's already processed
+                }
+            } else if (anyDateMatcher.matches()) {
+                // This is an invalid date (contains "xx")
+                String invalidDateText = segment;
+                
+                if (i + 1 < dateSegments.size()) {
+                    // Append the corresponding text
+                    invalidDateText += " " + dateSegments.get(i + 1);
+                    i++; // Skip next segment
+                }
 
-                logBasic("Output Row -> Date: " + (currentDate != null ? currentDate : "NULL") + ", Text: " + segment);
+                invalidDateText = invalidDateText.replaceAll("^[\\s\\-:]+", "").trim();
+
+                if (!invalidDateText.isEmpty()) {
+                    Object[] outputRow = createOutputRow(rowData, data.outputRowMeta.size());
+                    get(Fields.Out, "date").setValue(outputRow, null); // Invalid date -> null
+                    get(Fields.Out, "text").setValue(outputRow, invalidDateText);
+                    putRow(data.outputRowMeta, outputRow);
+
+                    logBasic("Output Row -> Date: NULL, Text: " + invalidDateText);
+                }
             }
         }
     } catch (Exception e) {
