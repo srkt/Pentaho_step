@@ -12,20 +12,28 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
     if (rowData == null) {
         if (accumulatedText.length() > 0) {
             rowIndex++; // Increment index for final row
-            Object[] finalRow = createOutputRow(null, data.outputRowMeta.size());
-            get(Fields.Out, "index").setValue(finalRow, rowIndex);
-            get(Fields.Out, "date").setValue(finalRow, currentDate);
-            get(Fields.Out, "text").setValue(finalRow, accumulatedText.toString().trim());
-            putRow(data.outputRowMeta, finalRow);
+            Object[] finalRow = createOutputRow(null, data != null && data.outputRowMeta != null ? data.outputRowMeta.size() : 0);
+            if (finalRow != null) {
+                setFieldValue(finalRow, "index", rowIndex);
+                setFieldValue(finalRow, "date", currentDate);
+                setFieldValue(finalRow, "text", accumulatedText.toString().trim());
+                putRow(data.outputRowMeta, finalRow);
+            }
         }
         setOutputDone();
         return false;
     }
 
-    // Get the full text field
-    String fullText = get(Fields.In, "full_text").getString(rowData);
+    // Get the full text field safely
+    String fullText = null;
+    try {
+        Object fieldValue = get(Fields.In, "full_text") != null ? get(Fields.In, "full_text").getValue(rowData) : null;
+        fullText = fieldValue != null ? fieldValue.toString() : null;
+    } catch (Exception e) {
+        // Log the error if needed, but continue with null
+    }
     if (fullText == null || fullText.trim().isEmpty()) {
-        return true; // Skip empty rows
+        return true; // Skip empty or null rows
     }
 
     // Split text into lines
@@ -33,6 +41,9 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
     Pattern datePattern = Pattern.compile("^(\\d{1,2}/\\d{1,2}/\\d{2})\\s*-\\s*(.*)$");
 
     for (String line : lines) {
+        if (line == null) {
+            continue; // Skip null lines from split
+        }
         line = line.trim();
         if (line.isEmpty()) {
             continue; // Skip empty lines
@@ -43,11 +54,13 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
             // Valid date found (e.g., 12/10/08)
             if (firstRowProcessed && accumulatedText.length() > 0) {
                 rowIndex++; // Increment index for each output row
-                Object[] outputRow = createOutputRow(rowData, data.outputRowMeta.size());
-                get(Fields.Out, "index").setValue(outputRow, rowIndex);
-                get(Fields.Out, "date").setValue(outputRow, currentDate);
-                get(Fields.Out, "text").setValue(outputRow, accumulatedText.toString().trim());
-                putRow(data.outputRowMeta, outputRow);
+                Object[] outputRow = createOutputRow(rowData, data != null && data.outputRowMeta != null ? data.outputRowMeta.size() : 0);
+                if (outputRow != null) {
+                    setFieldValue(outputRow, "index", rowIndex);
+                    setFieldValue(outputRow, "date", currentDate);
+                    setFieldValue(outputRow, "text", accumulatedText.toString().trim());
+                    putRow(data.outputRowMeta, outputRow);
+                }
             }
             currentDate = matcher.group(1); // e.g., "12/10/08"
             accumulatedText.setLength(0); // Clear previous text
@@ -63,4 +76,14 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
     }
 
     return true; // Continue processing
+}
+
+private void setFieldValue(Object[] row, String fieldName, Object value) {
+    try {
+        if (row != null && get(Fields.Out, fieldName) != null) {
+            get(Fields.Out, fieldName).setValue(row, value);
+        }
+    } catch (Exception e) {
+        // Log the error if needed, but avoid throwing to prevent stopping the step
+    }
 }
