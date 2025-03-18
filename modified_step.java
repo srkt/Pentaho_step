@@ -3,6 +3,7 @@ import java.util.regex.*;
 private String currentDate = "No Date"; // Default when no valid date exists
 private StringBuilder accumulatedText = new StringBuilder(); // Stores text for the last valid date
 private boolean firstRowProcessed = false; // Tracks if a valid date has been processed
+private int rowIndex = 0; // Index starts at 0, increments before output (first output is 1)
 
 public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws KettleException {
     Object[] rowData = getRow();
@@ -10,7 +11,9 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
     // No more rows: output the last accumulated row and finish
     if (rowData == null) {
         if (accumulatedText.length() > 0) {
+            rowIndex++; // Increment index for final row
             Object[] finalRow = createOutputRow(null, data.outputRowMeta.size());
+            get(Fields.Out, "index").setValue(finalRow, rowIndex);
             get(Fields.Out, "date").setValue(finalRow, currentDate);
             get(Fields.Out, "text").setValue(finalRow, accumulatedText.toString().trim());
             putRow(data.outputRowMeta, finalRow);
@@ -39,7 +42,9 @@ public boolean processRow(StepMetaInterface smi, StepDataInterface sdi) throws K
         if (matcher.find()) {
             // Valid date found (e.g., 12/10/08)
             if (firstRowProcessed && accumulatedText.length() > 0) {
+                rowIndex++; // Increment index for each output row
                 Object[] outputRow = createOutputRow(rowData, data.outputRowMeta.size());
+                get(Fields.Out, "index").setValue(outputRow, rowIndex);
                 get(Fields.Out, "date").setValue(outputRow, currentDate);
                 get(Fields.Out, "text").setValue(outputRow, accumulatedText.toString().trim());
                 putRow(data.outputRowMeta, outputRow);
